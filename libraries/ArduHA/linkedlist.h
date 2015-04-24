@@ -144,7 +144,7 @@ public:
 	/// <remarks>
 	/// child object must implement <c>compare()</>
 	/// </remarks>
-	void relocate(cls*/*volatile*/& fst = _first)
+	void relocate(cls*& fst = _first)
 	{
 		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 		{

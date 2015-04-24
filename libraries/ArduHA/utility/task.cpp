@@ -27,15 +27,17 @@
 #include <avr/sleep.h>
 #include "debug.h"
 
-#define MAX_MILLIS (2^31)
-#define MAX_MICROS (MAX_MILLIS/1000)
+#define MAX_MILLIS ((time_t)2^31)
+#define MAX_MICROS ((time_t)MAX_MILLIS/1000)
 
 volatile bool Task::_sleeping = false;
 
 //Task* volatile Task::_current = NULL;
 //Task* volatile Task::_millisQueue = NULL;
 Task* Task::_current = NULL;
-Task* Task::_millisQueue = NULL;
+TaskMillis Task::_millis;
+
+//# Task* Task::_millisQueue = NULL;
 
 //#if defined(__AVR_ATmega2560__)
 //#define PROGRAM_COUNTER_SIZE 3 /* bytes*/
@@ -129,47 +131,47 @@ void Task::sleep(time_t us) {
 // run task if time to, or sleep if wait==true
 bool Task::_run(bool wait)
 {
-	long d;
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 	{
-		d = compare(micros());
-	}
-	//if (wait) while (d > 0)	{
-	//	sleep(d);
-	//	d = compare(micros());
-	//}
+		long d = compare(micros());
 
-	if ( d <= 0 )
-	{
-		//detach task before execution
-		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+		if (wait) while (d > 0)	{
+			NONATOMIC_BLOCK(NONATOMIC_RESTORESTATE)
+			{
+				sleep(d);
+			}
+			d = compare(micros());
+		}
+
+		if (d <= 0)
 		{
 			if (_current) return false;
+			//detach task before execution
 			unlink();
+
 			_current = this;
-		}
 
-		//actual task execution
-		run();
+			//actual task execution
+			NONATOMIC_BLOCK(NONATOMIC_RESTORESTATE)
+			{
+				run();
+			}
 
-		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-		{
-			if (_current==this)
-				_current = NULL;
+			if (_current == this) _current = NULL;
 			return true;
 		}
+		else return false;
 	}
-	return false;
 }
 
-bool Task::_dequeueMillis()
+bool Task::dequeueMillis()
 {
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 	{
 		long d = compare(millis() + MAX_MICROS);
 		if (d < 0)
 		{
-			unlink(_millisQueue);
+			unlink(_millis.Queue);
 			trigTaskAt(_dueTime);
 			return true;
 		}
@@ -182,37 +184,28 @@ void Task::loop(bool sleep)
 {
 	wdt_reset();
 
-	Task* t = first();
-
-	if (t) t->_run(sleep);
-
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 	{
-		for (t = _millisQueue; t && t->_dequeueMillis(); t = _millisQueue);
+		Task* t = first();
+
+		if (t) t->_run(sleep);
 	}
+	//ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+	//{
+	
 }
 
 void Task::watchdog()
 {
 	Serial.println("watchdog");
 }
-/*
-bool Task::runInterrupt(byte intNo, time_t time)
-{
-		trigTaskAtMicros(time);
-		return false;
-}
-*/
 
-void Task::_trigTaskAt(time_t dueTime, Task*/*volatile*/& queue)
+void Task::_trigTaskAt(time_t dueTime, Task*& queue)
 {
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 	{
-		//if (_current != this)
-		{
-			_dueTime = dueTime;
-			relocate(queue);
-		}
+		_dueTime = dueTime;
+		relocate(queue);
 	}
 }
 
@@ -228,7 +221,8 @@ void Task::trigTaskMicros(time_t delay)
 
 void Task::trigTaskAt(time_t dueTime)
 {
-	_trigTaskAt(dueTime, _millisQueue);
+	_trigTaskAt(dueTime, _millis.Queue);
+	_millis.trigTask();
 }
 
 
@@ -273,4 +267,15 @@ int Task::compare(const Task& task) const
 {
 	long diff = compare(task.dueTime());
 	return sgn(diff);
+}
+
+
+void TaskMillis::run()
+{
+	Task* t = Queue;
+	while (t && t->dequeueMillis())
+	{
+		t = Queue;
+	}
+	if (t) trigTask(min(MAX_MICROS,t->dueTime()-(time_t)millis()-MAX_MICROS));
 }

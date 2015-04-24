@@ -33,6 +33,9 @@ https://code.google.com/p/narcoleptic/
 #include <ArduHA.h>
 #include "linkedlist.h"
 
+class TaskMillis;
+
+
 /// <summary>Base class for task scheduling</summary>
 class Task : public LinkedList<Task>
 {
@@ -40,7 +43,7 @@ class Task : public LinkedList<Task>
 	 static Task* _current;
 
 	 /// <summary>Queue to hold millis tasks</summary>
-	 static Task* _millisQueue;
+	 //# static Task* _millisQueue;
 
 
 	 /// <summary>system is currently sleeping waiting for watchdog to wake it up</summary>
@@ -55,6 +58,8 @@ class Task : public LinkedList<Task>
 	/// <param name="delay">delay in &micro;s</param>
 	static void sleep(time_t delay);
 
+	static TaskMillis _millis;
+
 protected:
 	/// <summary>scheduled execution time</summary>
 	time_t volatile _dueTime;
@@ -62,15 +67,13 @@ protected:
 	/// <summary>internal task execution engine</summary>
 	bool _run(bool sleep=false);
 
-	/// <summary>internal task execution engine</summary>
-	bool _dequeueMillis();
 
 
 	/// <returns>scheduled position against t (<0 if before, >0 if after)</returns>
 	/// <param name="t">time in &micro;s</param>
 	long compare(time_t t) const;
 
-	void _trigTaskAt(time_t dueTime, Task*/*volatile*/& queue);
+	void _trigTaskAt(time_t dueTime, Task*& queue);
 
 public:
 
@@ -135,6 +138,9 @@ public:
 	/// <remarq>might only be used by watchdog interrupt vector</remarq>
 	static bool sleeping() { return _sleeping; }
 
+	/// <summary>internal task execution engine</summary>
+	bool dequeueMillis();
+
 	/// <remarq>by default new task is not scheduled</remarq>
 	Task(){}
 
@@ -147,6 +153,14 @@ public:
 	/// <returns><0 if this is scheduled before task, >0 if this is scheduled after</returns>
 	int compare(const Task& task) const;
 };
+
+class TaskMillis : public Task
+{
+	virtual void run() override;
+public:
+	Task* Queue = NULL;
+};
+
 
 /// <summary>Reccuring task at interval from last task ending</summary>
 class RecurrentTask : public Task
