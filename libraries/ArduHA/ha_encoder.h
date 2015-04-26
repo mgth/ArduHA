@@ -62,27 +62,28 @@ public:
 	//	1	1	1	0	+1
 	//	1	1	1	1	no movement
 
+	int8_t _dir = 0;
 
-	void interrupt(time_t time, byte mask, bool val) {
+	void interrupt(byte in) {
+			int raw = _raw & ~(0B11) | _pos[in];
 
-		int raw = _raw;
+			int8_t delta = raw - _raw;
 
-		byte old = (byte)raw & (byte)0B11;
+			if (delta == -3
+				|| (delta == -2 && _dir == 1)
+				) raw += 4;
 
-		int8_t in = _inv[old];
-		if (val) { in |= mask; }
-		else { in &= ~mask; }
+			else if (delta == 3
+				|| (delta == 2 && _dir == -1)
+				) raw -= 4;
 
-		int8_t pos = _pos[in];
+			if (_raw != raw)
+			{
+				_dir = sgn(raw - _raw);
+				_raw = raw;
+			}
 
-		raw = raw & ~(0B11) | pos;
-
-		if (old == 0 && pos == 3) raw -= 4;
-		else if (old == 3 && pos == 0) raw += 4;
-
-		_raw = raw;
-
-		if (value()!=_last) trigTaskAtMicros(time);
+			if (value() != _last) trigTask(10);
 	}
 
 	virtual void run() override
@@ -102,24 +103,9 @@ public:
 		}
 	}
 
-	virtual void runInterrupt(int pin, bool value, time_t time) override
+	virtual void runInterrupt(int pin, bool val, time_t time) override
 	{
-
-		if (pin==_pinA)
-			interrupt(time, 0B10, value );
-			//interrupt(time, (_in & 0B11 ^ 0B10));
-		else if (pin == _pinB)
-			interrupt(time, 0B01, value );
-			//interrupt(time, (_in & 0B11 ^ 0B01));
-		//if (pin == _pinA || pin == _pinB)
-		//{
-		//	interrupt(time, digitalReadFast(_pinA) << 1 | digitalReadFast(_pinB));
-		//}
-		else if (pin == _pinClic)
-		{
-			_clic = value;
-			//trigTaskAtMicros(time);
-		}
+		interrupt(((pin == _pinA) ? val : digitalReadFast(_pinA)) << 1 | ((pin == _pinB) ? val : digitalReadFast(_pinB)));
 	}
 
 	virtual void watchdog() override { DBG("arg..."); }

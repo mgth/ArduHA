@@ -42,10 +42,6 @@ class Task : public LinkedList<Task>
 	/// <summary>currently running task</summary>
 	 static Task* _current;
 
-	 /// <summary>Queue to hold millis tasks</summary>
-	 //# static Task* _millisQueue;
-
-
 	 /// <summary>system is currently sleeping waiting for watchdog to wake it up</summary>
 	 static bool volatile _sleeping;
 
@@ -127,12 +123,12 @@ public:
 	Task* trigReccurentFromStart(time_t delay, time_t interval);
 
 	/// <summary>currently running task</summary>
-	static Task* volatile current() { return _current; };
+	static Task* current() { return _current; };
 
 	/// <summary>get scheduled execution time</summary>
 	/// <returns>scheduled execution time</returns>
 	/// <remarq>see microTiming() for time unit (ms or &micro;s)</remarq>
-	time_t dueTime() const { return _dueTime; }
+	time_t dueTime() const;
 
 	/// <summary>get slepping state</summary>
 	/// <remarq>might only be used by watchdog interrupt vector</remarq>

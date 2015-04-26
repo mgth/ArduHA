@@ -26,9 +26,10 @@
 #include <avr/wdt.h>
 #include <avr/sleep.h>
 #include "debug.h"
+#include <util/atomic.h>
 
-#define MAX_MILLIS ((time_t)2^31)
-#define MAX_MICROS ((time_t)MAX_MILLIS/1000)
+#define MAX_MILLIS ((time_t)LONG_MAX)
+#define MAX_MICROS (MAX_MILLIS/1000)
 
 volatile bool Task::_sleeping = false;
 
@@ -82,6 +83,9 @@ TaskMillis Task::_millis;
 //			;
 //	}
 //}
+time_t Task::dueTime() const {
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE) return _dueTime;
+}
 
 void Task::_wakeup(uint8_t wdt_period)
 {
@@ -104,95 +108,91 @@ void Task::_sleep(uint8_t wdt_period) {
 
 	Task::_sleeping = false;
 }
-/*
-void Task::sleep(time_t us) {
-	while (us >= 8000000) { _sleep(WDTO_8S); us -= 8000000; } //9
-	if (us >= 4000000)    { _sleep(WDTO_4S); us -= 4000000; } //8
-	if (us >= 2000000)    { _sleep(WDTO_2S); us -= 2000000; } //7
-	if (us >= 1000000)    { _sleep(WDTO_1S); us -= 1000000; } //6
-	if (us >= 500000)     { _sleep(WDTO_500MS); us -= 500000; }//5
-	if (us >= 250000)     { _sleep(WDTO_250MS); us -= 250000; }//4
-	if (us >= 125000)     { _sleep(WDTO_120MS); us -= 120000; }//3
-	if (us >= 64000)      { _sleep(WDTO_60MS); us -= 60000; }//2
-	if (us >= 32000)      { _sleep(WDTO_30MS); us -= 30000; }//1
-	if (us >= 16000)      { _sleep(WDTO_15MS); us -= 15000; }//0
-}
-*/
-// sleep reducing power consumption
-void Task::sleep(time_t us) {
-	time_t t = 8000000;
-	for (uint8_t wdto = 9; t >= 15000; t /= 2, wdto--)
+
+#define MICROSECONDS_PER_TIMER0_OVERFLOW (clockCyclesToMicroseconds(64 * 256))
+#define MILLIS_INC (MICROSECONDS_PER_TIMER0_OVERFLOW / 1000)
+#define FRACT_INC ((MICROSECONDS_PER_TIMER0_OVERFLOW % 1000) >> 3)
+#define FRACT_MAX (1000 >> 3)
+
+void updateTimer(time_t ms)
+{
+	extern volatile unsigned long timer0_millis, timer0_overflow_count;
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 	{
-		while (us > t) { _sleep(wdto); us -= t; }
+		timer0_millis += ms;
+
+		timer0_overflow_count += ((ms * FRACT_MAX) / (FRACT_MAX + FRACT_INC)) / MILLIS_INC;
 	}
 }
+
+void Task::sleep(time_t ms) {
+	while (ms >= 8000) { _sleep(WDTO_8S); ms -= 8000; updateTimer(8000); } //9
+	if (ms >= 4000)    { _sleep(WDTO_4S); ms -= 4000; updateTimer(4000); } //8
+	if (ms >= 2000)    { _sleep(WDTO_2S); ms -= 2000; updateTimer(2000); } //7
+	if (ms >= 1000)    { _sleep(WDTO_1S); ms -= 1000; updateTimer(1000); } //6
+	if (ms >= 500)     { _sleep(WDTO_500MS); ms -= 500; updateTimer(500); }//5
+	if (ms >= 250)     { _sleep(WDTO_250MS); ms -= 250; updateTimer(250); }//4
+	if (ms >= 125)     { _sleep(WDTO_120MS); ms -= 120; updateTimer(120); }//3
+	if (ms >= 64)      { _sleep(WDTO_60MS); ms -= 60; updateTimer(60); }//2
+	if (ms >= 32)      { _sleep(WDTO_30MS); ms -= 30; updateTimer(30); }//1
+	if (ms >= 16)      { _sleep(WDTO_15MS); ms -= 15; updateTimer(15); }//0
+}
+
 
 
 // run task if time to, or sleep if wait==true
 bool Task::_run(bool wait)
 {
-	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-	{
-		long d = compare(micros());
+	long d = compare(micros());
 
-		if (wait) while (d > 0)	{
-			NONATOMIC_BLOCK(NONATOMIC_RESTORESTATE)
-			{
-				sleep(d);
-			}
-			d = compare(micros());
-		}
-
-		if (d <= 0)
-		{
-			if (_current) return false;
-			//detach task before execution
-			unlink();
-
-			_current = this;
-
-			//actual task execution
-			NONATOMIC_BLOCK(NONATOMIC_RESTORESTATE)
-			{
-				run();
-			}
-
-			if (_current == this) _current = NULL;
-			return true;
-		}
-		else return false;
+	if (wait) while (d > 0)	{
+		sleep(d);
+		d = compare(micros());
 	}
+
+	if (d <= 0)
+	{
+		//remove task from queue before execution, so that actual execution can requeue it.
+		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+		{
+			unlink();
+			_current = this;
+		}
+		//actual task execution
+		run();
+
+		_current = NULL;
+		return true;
+	}
+	else return false;	
 }
 
 bool Task::dequeueMillis()
 {
-	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+	long d = compare(millis() + MAX_MICROS);
+	if (d < 0)
 	{
-		long d = compare(millis() + MAX_MICROS);
-		if (d < 0)
-		{
-			unlink(_millis.Queue);
-			trigTaskAt(_dueTime);
-			return true;
-		}
-		else return false;
+		unlink(_millis.Queue);
+		trigTaskAt(_dueTime);
+		return true;
 	}
+	else return false;
 }
 
 // run next task in the queue
 void Task::loop(bool sleep)
 {
 	wdt_reset();
+	
+	Task* t;
 
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 	{
-		Task* t = first();
-
-		if (t) t->_run(sleep);
+		t = first();
 	}
-	//ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-	//{
 	
+	if (t) t->_run(sleep);
+
 }
 
 void Task::watchdog()
@@ -259,7 +259,7 @@ Task* Task::trigReccurentFromStart(time_t delay, time_t interval)
 // returns scheduled position against t
 long Task::compare(time_t t) const
 {
-	return _dueTime - t;
+	return dueTime() - t;
 }
 
 //for Task to be sortable

@@ -25,12 +25,11 @@
 #ifndef LINKEDLIST_H
 #define LINKEDLIST_H
 #include <ArduHA.h>
-#include <util/atomic.h>
 
 /// <summary>macro to iterate pointers of the linked list</summary>
 //#define foreachlnkfrom(cls,lnk,from) for (cls*volatile* lnk = from; *lnk; lnk = &(*lnk)->LinkedList<cls>::_next)
-#define foreachlnkfrom(cls,lnk,from) for (cls** lnk = from; *lnk; lnk = &(*lnk)->LinkedList<cls>::_next)
-#define foreachlnk(cls,lnk) foreachlnkfrom(cls,lnk,&LinkedList<cls>::_first)
+#define foreachlnkfrom(cls,lnk,from) for (cls** lnk = from; *lnk; lnk = &(*lnk)->LinkedList<cls>::next())
+#define foreachlnk(cls,lnk) foreachlnkfrom(cls,lnk,&LinkedList<cls>::first())
 
 /// <summary>macro to iterate all members of a list</summary>
 //#define foreachfrom(cls,obj,from) for(cls* obj=from;obj;obj=obj->LinkedList<cls>::next())
@@ -60,46 +59,35 @@ protected:
 	cls* _next;
 
 public:
-	//operator cls*() { return (cls*)this; }
-	/// <summary>next element or null if this is last</summary>
+	/// <summary>reference to the next slot</summary>
 	cls*&  next() { return _next; }
 
 	/// <summary>last element or null if list is empty</summary>
 	cls*& last() {
-		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-		{
 			cls** c = &_next;
 			while (*c != NULL) c = &(*c)->_next;
 			return *c;
-		}
 	}
 
 	/// <summary>get first element of the list</summary>
 	static cls*& first() { return _first; }
-	
+
 	//
 	/// <summary>add this element to list</summary>
 	/// <param name="lnk">reference to a link where to insert element</param>
 	/// <remarks>
 	/// pass <c>previous.next()</c> or <c>cls::first()</c>
 	/// </remarks>
-	void link(cls*& lnk)
+	void link(cls*& lnk = first())
 	{
-		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-		{
 			_next = lnk;
 			lnk = (cls*)this;
-		}
 	}
 
 	/// <summary>remove an element from the list</summary>
-	/// <param name="fst">head of the list, default : <c>first()</c></param>
-	//void unlink(cls*volatile& fst = _first)
-	void unlink(cls*& fst = _first)
+	/// <param name="fst">reference to head of the list, default : <c>firstRef()</c></param>
+	void unlink(cls*& fst = first())
 	{
-		// using atomic block to allow safe usage within interrupts
-		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-		{
 			foreachlnkfrom(cls, lnk, &fst)
 			{
 				if (*lnk == this)
@@ -110,13 +98,10 @@ public:
 			}
 
 			_next = NULL;
-		}
 	}
 
 	/// <summary>see if object is already linked</summary>
-	bool linked(cls*& fst = _first) {
-		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-		{
+	bool linked(cls*& fst = first()) {
 			foreachfrom(cls, lnk, &fst)
 			{
 				if (lnk == this)
@@ -125,29 +110,23 @@ public:
 				}
 			}
 			return false;
-		}
 	}
 
 	/// <summary>count elements to end</summary>
 	/// <param name="fst">element to start count from</param>
-	static int count(cls*volatile& fst = first())
+	static int count(cls*& fst = first())
 	{
-		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-		{
 			int c = 0;
 			foreach(cls, obj) { c++; }
 			return c;
-		}
 	}
 
 	/// <summary>move element at his position</summary>
 	/// <remarks>
 	/// child object must implement <c>compare()</>
 	/// </remarks>
-	void relocate(cls*& fst = _first)
+	void relocate(cls*& fst = first())
 	{
-		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-		{
 			((cls*)this)->unlink(fst);
 
 			cls** lnk = &fst;
@@ -158,7 +137,6 @@ public:
 					lnk = &( (*lnk)->next() );
 				}
 				((cls*)this)->link(*lnk);
-		}
 	}
 
 	/// <summary>destroy element</summary>
@@ -168,10 +146,7 @@ public:
 	/// <summary>item creation with no argument, unlinked by default</summary>
 	/// <remarks>unlinked element point to itsef</remarks>
 	LinkedList<cls>() {
-		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-		{
-			_next = (cls*volatile)this;
-		}
+			_next = (cls*)this;
 	}
 
 	/// <summary>linked item creation</summary>
@@ -189,7 +164,7 @@ template<class cls>
 class AutoList : public LinkedList<cls>
 {
 public:
-	AutoList<cls>() : LinkedList<cls>(LinkedList<cls>::_first) {  };
+	AutoList<cls>() : LinkedList<cls>(LinkedList<cls>::first()) {  };
 };
 
 #endif
