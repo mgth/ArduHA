@@ -12,13 +12,13 @@ Watchdog::CApplicationMonitor ApplicationMonitor;
 HA_Encoder<2, 3, 6> rotary;
 HA_Encoder<4, 5, 7> rotary2;
 //
-template<typename t>
-class DebugFilter : public Filter < t >
+template<typename T>
+class DebugFilter : public Filter < T >
 {
 	StringRom _header;
 public:
 	DebugFilter(StringRom s) :_header(s) {}
-	void input(t value)
+	void runFilter(T value) override
 	{
 		//Serial.println(value);
 		DBGLN(_header,value);

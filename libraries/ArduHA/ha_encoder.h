@@ -11,7 +11,7 @@ const int8_t _pos[] = { 2, 3, 1, 0 };
 const int8_t _inv[] = { 3, 2, 0, 1 };
 
 template<int _pinA, int _pinB, int _pinClic = -1, byte _indent = 2>
-class HA_Encoder : public Task, private Interrupt<_pinA>, private Interrupt<_pinB>, private Interrupt<_pinClic>
+class HA_Encoder : private Interrupt<_pinA>, private Interrupt<_pinB>, private Interrupt<_pinClic>
 {
 	int volatile _raw  = 0;
 	bool volatile _clic = false;
@@ -23,7 +23,6 @@ class HA_Encoder : public Task, private Interrupt<_pinA>, private Interrupt<_pin
 
 public:
 	FilterPin<int> out;
-	FilterPin<time_t> timing;
 	FilterPin<bool> clic;
 
 	int value() { return (_raw +2) >>_indent; }
@@ -83,32 +82,23 @@ public:
 				_raw = raw;
 			}
 
-			if (value() != _last) trigTask(10);
-	}
-
-	virtual void run() override
-	{
-		if (_pinClic!=-1 && _clic)
-		{
-			_clic = false;
-			clic.write(true);
-		}
-
-		int v = value();
-
-		if (_last != v)
-		{
-			_last = v;
-			out.write(_last);
-		}
+			if (value() != out.value())
+			{
+				out.write(value());
+			}
 	}
 
 	virtual void runInterrupt(int pin, bool val, time_t time) override
 	{
-		interrupt(((pin == _pinA) ? val : digitalReadFast(_pinA)) << 1 | ((pin == _pinB) ? val : digitalReadFast(_pinB)));
+		if (pin == _pinClic)
+			clic.write(val);
+		else
+			interrupt(
+			  ((pin == _pinA) ? val : digitalReadFast(_pinA)) << 1
+			| ((pin == _pinB) ? val : digitalReadFast(_pinB))
+			);
 	}
 
-	virtual void watchdog() override { DBG("arg..."); }
 };
 
 #endif

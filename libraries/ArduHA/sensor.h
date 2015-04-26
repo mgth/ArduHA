@@ -39,32 +39,36 @@ typedef int16_t temperature_t;
 /// - hardware address
 /// - sensor options
 /// - interval
-
+template <typename T>
+class FilterPin;
 /// <summary>Filter object offers an input that will be fed by a <c>FilterPin</c></summary>
 template <typename T>
-class Filter
-#ifdef HA_FILTER_MULTI
-	:public LinkedList< Filter<T> >
-#endif
+class Filter : public LinkedList < Filter<T> > , private Task
 {
+	void run() override
+	{
+		runFilter(pin->value());
+	}
 public:
-	virtual void input(T value) = 0;
-	virtual void error() {};
+	FilterPin<T>* pin;
+	virtual void runFilter(T value) = 0;
+	void trigFilter() { trigTask(); }
+	void linkFilter(Filter<T>*& flt) { LinkedList < Filter<T> >::link(flt); }
 };
 
 /// <summary>output pin to link <c>Filter</c> to</summary>
 template <typename T>
 class FilterPin {
 	Filter<T>* _filter;
+	T _value;
 public:
+	T value() { return _value; }
+
 	FilterPin() :_filter(NULL){};
 	/// <summary>Add a filter to listen to this pin</summary>
 	Filter<T>* link(Filter<T>* filter) {
-#ifdef HA_FILTER_MULTI
-		filter->Filter<T>::link(_filter);
-#else
-		_filter = filter;
-#endif
+		filter->LinkedList < Filter<T> >::link(_filter);
+		filter->pin = this;
 		return filter;
 	}
 
@@ -73,29 +77,15 @@ public:
 	Tobj& link(Tobj* obj) { return *(Tobj*)link((Filter<T>*)obj); }
 
 	/// <summary>write information to all listening filters on this pin</summary>
-	bool write(T value)
+	void write(T value)
 	{
-#ifdef HA_FILTER_MULTI
+		_value = value;
 		foreachfrom(Filter<T>, f, _filter)
 		{
-			f->input(value);
+			f->trigFilter();
 		}
-#else
-		if (_filter) _filter->input(value);
-#endif
 	}
 
-	void error()
-	{
-#ifdef HA_FILTER_MULTI
-			foreachfrom(Filter<T>, f, _filter)
-			{
-				f->error();
-			}
-#else
-			if (_filter) _filter->error();
-#endif
-		}
 };
 
 /// <summary>smothing filter</summary>
@@ -107,7 +97,7 @@ class KalmanFilter : public Filter<T>
 
 
 	/// <summary>input function to feed filter</summary>
-	void input(T in)
+	void runFilter(T in)
 	{
 		if (_value == maxValue<T>())
 			_value = in;
