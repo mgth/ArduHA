@@ -37,7 +37,7 @@ class TaskMillis;
 
 
 /// <summary>Base class for task scheduling</summary>
-class Task : public LinkedList<Task>
+class Task : public LinkedObject<Task>
 {
 	/// <summary>currently running task</summary>
 	 static Task* _current;
@@ -53,6 +53,8 @@ class Task : public LinkedList<Task>
 	/// <summary>do nothing for some time, potencialy use power save</summary>
 	/// <param name="delay">delay in &micro;s</param>
 	static void sleep(time_t delay);
+
+	static LinkedList<Task> _queue;
 
 	static TaskMillis _millis;
 
@@ -154,7 +156,7 @@ class TaskMillis : public Task
 {
 	virtual void run() override;
 public:
-	Task* Queue = NULL;
+	LinkedList<Task> Queue;
 };
 
 
@@ -210,5 +212,53 @@ class RecurrentTaskFromStart : public RecurrentTask
 	}
 };
 
+template<class cls>
+class FunctionTask : public Task
+{
+	cls& _obj;
+	void (cls::* _func)();
+public:
+	FunctionTask(cls& obj, void (cls::* func)()) :_obj(obj), _func(func) { }
+	void run() override { (_obj.*_func)(); }
+};
+
+#define _ARG_(...) __VA_ARGS__
+#define TASK(cls, name) FunctionTask< cls > name = FunctionTask< cls >(*this, &cls::_##name); void _##name()
+
+template<typename T>
+class Slot
+{
+public:
+	virtual void receive(T arg) = 0;
+};
+
+template<class cls, typename T>
+class SlotClass : public Slot<T>
+{
+	cls& _obj;
+	T _arg;
+	void (cls::* _func)(T);
+public:
+	SlotClass(cls& obj, void (cls::* func)(T)) :_obj(obj), _func(func) { }
+	void receive(T arg) override { (_obj.*_func)(arg); }
+	cls& obj() { return _obj; }
+};
+
+#define SLOT(cls,T,nam) SlotClass< cls, T > nam = (SlotClass< cls, T >(*this, &cls::_##nam)); void _##nam(T value)
+
+
+template<typename T>
+class Signal
+{
+	Slot<T>* _slot;
+public:
+	void send(T value)
+	{
+		if (_slot) _slot->receive(value);
+	}
+
+	template<class cls>
+	cls& link(SlotClass<cls, T>& slot) { _slot = &slot; return slot.obj(); }
+};
 
 #endif

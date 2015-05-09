@@ -43,31 +43,32 @@ template <typename T>
 class FilterPin;
 /// <summary>Filter object offers an input that will be fed by a <c>FilterPin</c></summary>
 template <typename T>
-class Filter : public LinkedList < Filter<T> > , private Task
+class Filter : public LinkedObject < Filter<T> > //, private Task
 {
-	void run() override
+//	void run() override
+	TASK(Filter<T>,filterTask)
 	{
 		runFilter(pin->value());
 	}
 public:
 	FilterPin<T>* pin;
 	virtual void runFilter(T value) = 0;
-	void trigFilter() { trigTask(); }
+	void trigFilter() { filterTask.trigTask(); }
 	void linkFilter(Filter<T>*& flt) { LinkedList < Filter<T> >::link(flt); }
 };
 
 /// <summary>output pin to link <c>Filter</c> to</summary>
 template <typename T>
 class FilterPin {
-	Filter<T>* _filter;
+	LinkedList< Filter<T> > _filter;
 	T _value;
 public:
 	T value() { return _value; }
 
-	FilterPin() :_filter(NULL){};
+//	FilterPin() :_filter(NULL){};
 	/// <summary>Add a filter to listen to this pin</summary>
 	Filter<T>* link(Filter<T>* filter) {
-		filter->LinkedList < Filter<T> >::link(_filter);
+		filter->LinkedObject < Filter<T> >::link(_filter);
 		filter->pin = this;
 		return filter;
 	}
@@ -80,7 +81,7 @@ public:
 	void write(T value)
 	{
 		_value = value;
-		foreachfrom(Filter<T>, f, _filter)
+		foreach(Filter<T>, f, _filter)
 		{
 			f->trigFilter();
 		}

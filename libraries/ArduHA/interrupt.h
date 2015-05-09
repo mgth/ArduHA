@@ -41,7 +41,7 @@ class Interrupt : public InterruptBase, public AutoList < Interrupt<pinNo> >
 {	
 	static void _runInterrupt() {
 			time_t now = micros();
-			foreach(Interrupt<pinNo>, interrupt)
+			foreach(Interrupt<pinNo>, interrupt, Interrupt::List())
 			{
 				interrupt->runInterrupt(pinNo, digitalReadFast(pinNo), now);
 			}

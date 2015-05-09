@@ -3,6 +3,7 @@
 
 #include "task.h"
 #include "interrupt.h"
+#include "sensor.h"
 #include "Arduino.h"
 
 //#define _pinA 2
@@ -22,8 +23,8 @@ class HA_Encoder : private Interrupt<_pinA>, private Interrupt<_pinB>, private I
 
 
 public:
-	FilterPin<int> out;
-	FilterPin<bool> clic;
+	Signal<int> out;
+	Signal<bool> clic;
 
 	int value() { return (_raw +2) >>_indent; }
 
@@ -62,6 +63,11 @@ public:
 	//	1	1	1	1	no movement
 
 	int8_t _dir = 0;
+	typedef HA_Encoder < _pinA, _pinB, _pinClic, _indent > __class__;
+	TASK(__class__, send)
+	{
+		out.send(value());
+	}
 
 	void interrupt(byte in) {
 			int raw = _raw & ~(0B11) | _pos[in];
@@ -76,22 +82,24 @@ public:
 				|| (delta == 2 && _dir == -1)
 				) raw -= 4;
 
+			int old = value();
 			if (_raw != raw)
 			{
 				_dir = sgn(raw - _raw);
 				_raw = raw;
 			}
 
-			if (value() != out.value())
+			if (value() != old)
 			{
-				out.write(value());
+				send.trigTask();
 			}
 	}
+
 
 	virtual void runInterrupt(int pin, bool val, time_t time) override
 	{
 		if (pin == _pinClic)
-			clic.write(val);
+			clic.send(val);
 		else
 			interrupt(
 			  ((pin == _pinA) ? val : digitalReadFast(_pinA)) << 1

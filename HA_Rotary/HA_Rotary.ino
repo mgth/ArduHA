@@ -5,9 +5,9 @@
 #include "ha_encoder.h"
 #include <avr/wdt.h>
 
-#include "ApplicationMonitor.h"
+//#include "ApplicationMonitor.h"
 
-Watchdog::CApplicationMonitor ApplicationMonitor;
+//Watchdog::CApplicationMonitor ApplicationMonitor;
 
 HA_Encoder<2, 3, 6> rotary;
 HA_Encoder<4, 5, 7> rotary2;
@@ -33,7 +33,7 @@ void setup()
 	Serial.begin(115200);
 	Serial.println("========================================================");
 
-	ApplicationMonitor.Dump(Serial);
+//	ApplicationMonitor.Dump(Serial);
 	
 	//delay(5000);
 
@@ -53,7 +53,7 @@ void setup()
 //	//debugTask.trigTask();
 //
 
-	ApplicationMonitor.EnableWatchdog(Watchdog::CApplicationMonitor::Timeout_4s);
+//	ApplicationMonitor.EnableWatchdog(Watchdog::CApplicationMonitor::Timeout_4s);
 }
 
 /*

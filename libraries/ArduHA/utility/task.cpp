@@ -37,6 +37,7 @@ volatile bool Task::_sleeping = false;
 //Task* volatile Task::_millisQueue = NULL;
 Task* Task::_current = NULL;
 TaskMillis Task::_millis;
+LinkedList<Task> Task::_queue;
 
 //# Task* Task::_millisQueue = NULL;
 
@@ -155,7 +156,7 @@ bool Task::_run(bool wait)
 		//remove task from queue before execution, so that actual execution can requeue it.
 		ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 		{
-			unlink();
+			unlink(_queue);
 			_current = this;
 		}
 		//actual task execution
@@ -188,7 +189,7 @@ void Task::loop(bool sleep)
 
 	ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
 	{
-		t = first();
+		t = _queue;
 	}
 	
 	if (t) t->_run(sleep);
@@ -211,7 +212,7 @@ void Task::_trigTaskAt(time_t dueTime, Task*& queue)
 
 void Task::trigTaskAtMicros(time_t dueTime)
 {
-	_trigTaskAt(dueTime, first());
+	_trigTaskAt(dueTime, _queue);
 }
 
 void Task::trigTaskMicros(time_t delay)
