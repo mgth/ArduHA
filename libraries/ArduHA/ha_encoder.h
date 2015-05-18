@@ -3,7 +3,7 @@
 
 #include "task.h"
 #include "interrupt.h"
-#include "sensor.h"
+#include "filter.h"
 #include "Arduino.h"
 
 //#define _pinA 2

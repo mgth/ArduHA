@@ -32,6 +32,7 @@ https://code.google.com/p/narcoleptic/
 
 #include <ArduHA.h>
 #include "linkedlist.h"
+#include "signal.h"
 
 class TaskMillis;
 
@@ -39,24 +40,6 @@ class TaskMillis;
 /// <summary>Base class for task scheduling</summary>
 class Task : public LinkedObject<Task>
 {
-	/// <summary>currently running task</summary>
-	 static Task* _current;
-
-	 /// <summary>system is currently sleeping waiting for watchdog to wake it up</summary>
-	 static bool volatile _sleeping;
-
-	/// <summary>wakeup from sleep and set watchdog timer</summary>
-	 static void _wakeup(uint8_t wdt_period = 9);
-
-	/// <summary>sleep using power reduction</summary>
-	static void _sleep(uint8_t wdt_period);
-	/// <summary>do nothing for some time, potencialy use power save</summary>
-	/// <param name="delay">delay in &micro;s</param>
-	static void sleep(time_t delay);
-
-	static LinkedList<Task> _queue;
-
-	static TaskMillis _millis;
 
 protected:
 	/// <summary>scheduled execution time</summary>
@@ -75,19 +58,9 @@ protected:
 
 public:
 
-	/// <summary>run next task in queue if it's time to</summary>
-	/// <param name="sleep">if true reduce power consuption until next task</param>
-	/// <returns>-1 : no more task in queue<br>0 : nothing done this time<br>1 : task executed</returns>
-	static void loop(bool sleep = false);
-
 	/// <summary>to be overriden for task execution</summary>
-	virtual void run() = 0;
-	/// <summary>to be overriden for execution at interrupt time</summary>
-	/// <reamarq>default action is to trig task in normal task queue, should be kept as short as possible</remark>
-	/// <return>true if task should stay attatched to interrupt</remark>
-	//virtual bool runInterrupt(byte intNo, time_t time);
-
-	virtual void watchdog();
+	Signal<void> run;
+	Signal<void> watchdog;
 
 	/// <summary>schedule next execution at determined due time</summary>
 	/// <param name="duetime">time in &micro;s</param>
@@ -132,9 +105,6 @@ public:
 	/// <remarq>see microTiming() for time unit (ms or &micro;s)</remarq>
 	time_t dueTime() const;
 
-	/// <summary>get slepping state</summary>
-	/// <remarq>might only be used by watchdog interrupt vector</remarq>
-	static bool sleeping() { return _sleeping; }
 
 	/// <summary>internal task execution engine</summary>
 	bool dequeueMillis();
@@ -150,6 +120,39 @@ public:
 	/// <param name="task">the task to compare this to</param>
 	/// <returns><0 if this is scheduled before task, >0 if this is scheduled after</returns>
 	int compare(const Task& task) const;
+};
+
+class TaskQueue : LinkedList < Task >
+{
+	/// <summary>currently running task</summary>
+	Task* _current;
+
+	/// <summary>system is currently sleeping waiting for watchdog to wake it up</summary>
+	bool volatile _sleeping;
+
+	/// <summary>wakeup from sleep and set watchdog timer</summary>
+	void _wakeup(uint8_t wdt_period = 9);
+
+	/// <summary>sleep using power reduction</summary>
+	void _sleep(uint8_t wdt_period);
+
+	TaskMillis _millis;
+
+public:
+	/// <summary>run next task in queue if it's time to</summary>
+	/// <param name="sleep">if true reduce power consuption until next task</param>
+	/// <returns>-1 : no more task in queue<br>0 : nothing done this time<br>1 : task executed</returns>
+	void loop(bool sleep = false);
+
+	/// <summary>do nothing for some time, potencialy use power save</summary>
+	/// <param name="delay">delay in &micro;s</param>
+
+	void sleep(time_t delay);
+	/// <summary>get slepping state</summary>
+	/// <remarq>might only be used by watchdog interrupt vector</remarq>
+
+	bool sleeping() { return _sleeping; }
+
 };
 
 class TaskMillis : public Task
@@ -225,40 +228,7 @@ public:
 #define _ARG_(...) __VA_ARGS__
 #define TASK(cls, name) FunctionTask< cls > name = FunctionTask< cls >(*this, &cls::_##name); void _##name()
 
-template<typename T>
-class Slot
-{
-public:
-	virtual void receive(T arg) = 0;
-};
-
-template<class cls, typename T>
-class SlotClass : public Slot<T>
-{
-	cls& _obj;
-	T _arg;
-	void (cls::* _func)(T);
-public:
-	SlotClass(cls& obj, void (cls::* func)(T)) :_obj(obj), _func(func) { }
-	void receive(T arg) override { (_obj.*_func)(arg); }
-	cls& obj() { return _obj; }
-};
-
-#define SLOT(cls,T,nam) SlotClass< cls, T > nam = (SlotClass< cls, T >(*this, &cls::_##nam)); void _##nam(T value)
 
 
-template<typename T>
-class Signal
-{
-	Slot<T>* _slot;
-public:
-	void send(T value)
-	{
-		if (_slot) _slot->receive(value);
-	}
-
-	template<class cls>
-	cls& link(SlotClass<cls, T>& slot) { _slot = &slot; return slot.obj(); }
-};
 
 #endif
